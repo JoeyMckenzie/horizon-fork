@@ -237,6 +237,16 @@ interface JobRepository
     public function storeRetryReference($id, $retryId);
 
     /**
+     * Get job IDs with their scores from a given type set.
+     *
+     * @param  string  $type
+     * @param  int  $offset
+     * @param  int  $count
+     * @return array
+     */
+    public function getJobIdsByType($type, $offset = 0, $count = 50);
+
+    /**
      * Delete a failed job by ID.
      *
      * @param  string  $id

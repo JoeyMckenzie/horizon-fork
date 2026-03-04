@@ -146,6 +146,26 @@ class RedisTagRepository implements TagRepository
     }
 
     /**
+     * Add a batch of job entries to a tag with their scores.
+     *
+     * @param  string  $tag
+     * @param  array  $entries
+     * @return void
+     */
+    public function addBatch(string $tag, array $entries): void
+    {
+        if (empty($entries)) {
+            return;
+        }
+
+        $this->connection()->pipeline(function ($pipe) use ($tag, $entries) {
+            foreach ($entries as $entry) {
+                $pipe->zadd($tag, $entry['score'], $entry['id']);
+            }
+        });
+    }
+
+    /**
      * Remove the given job IDs from the given tag.
      *
      * @param  array|string  $tags

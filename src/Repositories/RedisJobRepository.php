@@ -251,6 +251,23 @@ class RedisJobRepository implements JobRepository
     }
 
     /**
+     * Get job IDs with their scores from a given type set.
+     *
+     * @param  string  $type
+     * @param  int  $offset
+     * @param  int  $count
+     * @return array
+     */
+    public function getJobIdsByType(string $type, int $offset = 0, int $count = 50): array
+    {
+        $results = $this->connection()->zrange($type, $offset, $offset + $count - 1, ['WITHSCORES' => true]);
+
+        return collect($results)->map(function ($score, $id) {
+            return ['id' => $id, 'score' => (float) $score];
+        })->values()->all();
+    }
+
+    /**
      * Get the number of jobs in a given type set.
      *
      * @param  string  $type

@@ -78,4 +78,64 @@ class MonitoringTest extends IntegrationTest
         dispatch(new StopMonitoringTag('first'));
         $this->assertSame(0, $this->monitoredJobs('first'));
     }
+
+    public function test_existing_completed_jobs_are_backfilled_when_monitor_is_created()
+    {
+        Queue::push(new Jobs\BasicJob);
+        $this->work();
+
+        // Monitor created AFTER job was processed
+        dispatch(new MonitorTag('first'));
+
+        $this->assertGreaterThan(0, $this->monitoredJobs('first'));
+    }
+
+    public function test_backfill_does_not_duplicate_jobs()
+    {
+        Queue::push(new Jobs\BasicJob);
+        $this->work();
+
+        dispatch(new MonitorTag('first'));
+        $countAfterFirst = $this->monitoredJobs('first');
+
+        // Dispatch again — should not double-count
+        dispatch(new MonitorTag('first'));
+        $this->assertSame($countAfterFirst, $this->monitoredJobs('first'));
+    }
+
+    public function test_backfill_only_matches_jobs_with_the_monitored_tag()
+    {
+        Queue::push(new Jobs\BasicJob);
+        $this->work();
+
+        // BasicJob has tags ['first', 'second'], so 'nonexistent' should find nothing
+        dispatch(new MonitorTag('nonexistent'));
+
+        $this->assertSame(0, $this->monitoredJobs('nonexistent'));
+    }
+
+    public function test_backfill_handles_large_job_volumes()
+    {
+        for ($i = 0; $i < 65; $i++) {
+            Queue::push(new Jobs\BasicJob);
+        }
+
+        $this->work(65);
+
+        dispatch(new MonitorTag('first'));
+
+        $this->assertSame(65, $this->monitoredJobs('first'));
+    }
+
+    public function test_backfill_is_skipped_when_config_is_zero()
+    {
+        Queue::push(new Jobs\BasicJob);
+        $this->work();
+
+        config(['horizon.trim.monitor_backfill' => 0]);
+
+        dispatch(new MonitorTag('first'));
+
+        $this->assertSame(0, $this->monitoredJobs('first'));
+    }
 }
