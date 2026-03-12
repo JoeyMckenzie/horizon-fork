@@ -81,15 +81,6 @@ interface TagRepository
     public function paginate($tag, $startingAt = 0, $limit = 25);
 
     /**
-     * Add a batch of job entries to a tag with their scores.
-     *
-     * @param  string  $tag
-     * @param  array  $entries
-     * @return void
-     */
-    public function addBatch($tag, $entries);
-
-    /**
      * Delete the given tag from storage.
      *
      * @param  string  $tag

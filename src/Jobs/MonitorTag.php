@@ -4,6 +4,8 @@ namespace Laravel\Horizon\Jobs;
 
 use Laravel\Horizon\Contracts\JobRepository;
 use Laravel\Horizon\Contracts\TagRepository;
+use Laravel\Horizon\Repositories\RedisJobRepository;
+use Laravel\Horizon\Repositories\RedisTagRepository;
 
 class MonitorTag
 {
@@ -41,19 +43,21 @@ class MonitorTag
     {
         $tags->monitor($this->tag);
 
-        $this->backfill($tags, $jobs);
+        if ($tags instanceof RedisTagRepository && $jobs instanceof RedisJobRepository) {
+            $this->backfill($tags, $jobs);
+        }
     }
 
     /**
      * Backfill existing jobs that match the monitored tag.
      *
-     * @param  \Laravel\Horizon\Contracts\TagRepository  $tags
-     * @param  \Laravel\Horizon\Contracts\JobRepository  $jobs
+     * @param  \Laravel\Horizon\Repositories\RedisTagRepository  $tags
+     * @param  \Laravel\Horizon\Repositories\RedisJobRepository  $jobs
      * @return void
      */
-    protected function backfill(TagRepository $tags, JobRepository $jobs)
+    protected function backfill(RedisTagRepository $tags, RedisJobRepository $jobs)
     {
-        $backfillMinutes = config('horizon.trim.monitor_backfill', 43200);
+        $backfillMinutes = config('horizon.trim.monitor_backfill', 10080);
 
         if ($backfillMinutes === 0) {
             return;
@@ -69,15 +73,17 @@ class MonitorTag
 
     /**
      * Backfill jobs from a specific job type ZSET.
+     * Once we encounter a job older than the cutoff, all subsequent entries
+     * in the ZSET are guaranteed to be older, so we can stop scanning.
      *
-     * @param  \Laravel\Horizon\Contracts\TagRepository  $tags
-     * @param  \Laravel\Horizon\Contracts\JobRepository  $jobs
+     * @param  \Laravel\Horizon\Repositories\RedisTagRepository  $tags
+     * @param  \Laravel\Horizon\Repositories\RedisJobRepository  $jobs
      * @param  string  $type
      * @param  int  $cutoff
      * @param  array  &$seen
      * @return void
      */
-    protected function backfillFromType(TagRepository $tags, JobRepository $jobs, string $type, int $cutoff, array &$seen)
+    protected function backfillFromType(RedisTagRepository $tags, RedisJobRepository $jobs, string $type, int $cutoff, array &$seen)
     {
         $offset = 0;
         $pageSize = 50;
@@ -96,7 +102,7 @@ class MonitorTag
                 $timestamp = abs($entry['score']);
 
                 if ($timestamp < $cutoff) {
-                    continue;
+                    return;
                 }
 
                 if (isset($seen[$entry['id']])) {
@@ -117,7 +123,7 @@ class MonitorTag
                     $payload = json_decode($job->payload, true);
                     $jobTags = $payload['tags'] ?? [];
 
-                    if (in_array($this->tag, $jobTags)) {
+                    if (in_array($this->tag, $jobTags, true)) {
                         $matching[] = [
                             'id' => $job->id,
                             'score' => $scoreMap[$job->id],

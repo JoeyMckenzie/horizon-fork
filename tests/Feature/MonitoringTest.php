@@ -2,6 +2,7 @@
 
 namespace Laravel\Horizon\Tests\Feature;
 
+use Carbon\Carbon;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Redis;
 use Laravel\Horizon\Contracts\TagRepository;
@@ -84,7 +85,6 @@ class MonitoringTest extends IntegrationTest
         Queue::push(new Jobs\BasicJob);
         $this->work();
 
-        // Monitor created AFTER job was processed
         dispatch(new MonitorTag('first'));
 
         $this->assertGreaterThan(0, $this->monitoredJobs('first'));
@@ -98,7 +98,6 @@ class MonitoringTest extends IntegrationTest
         dispatch(new MonitorTag('first'));
         $countAfterFirst = $this->monitoredJobs('first');
 
-        // Dispatch again — should not double-count
         dispatch(new MonitorTag('first'));
         $this->assertSame($countAfterFirst, $this->monitoredJobs('first'));
     }
@@ -108,7 +107,6 @@ class MonitoringTest extends IntegrationTest
         Queue::push(new Jobs\BasicJob);
         $this->work();
 
-        // BasicJob has tags ['first', 'second'], so 'nonexistent' should find nothing
         dispatch(new MonitorTag('nonexistent'));
 
         $this->assertSame(0, $this->monitoredJobs('nonexistent'));
@@ -133,6 +131,20 @@ class MonitoringTest extends IntegrationTest
         $this->work();
 
         config(['horizon.trim.monitor_backfill' => 0]);
+
+        dispatch(new MonitorTag('first'));
+
+        $this->assertSame(0, $this->monitoredJobs('first'));
+    }
+
+    public function test_backfill_excludes_jobs_older_than_cutoff_window()
+    {
+        Carbon::setTestNow(now()->subMinutes(120));
+        Queue::push(new Jobs\BasicJob);
+        $this->work();
+
+        Carbon::setTestNow();
+        config(['horizon.trim.monitor_backfill' => 60]);
 
         dispatch(new MonitorTag('first'));
 
