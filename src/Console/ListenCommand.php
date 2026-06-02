@@ -4,8 +4,9 @@ namespace Laravel\Horizon\Console;
 
 use Illuminate\Console\Command;
 use InvalidArgumentException;
+use Laravel\Horizon\Contracts\FileWatcher;
+use Laravel\Horizon\FileWatchers\ChokidarFileWatcher;
 use Symfony\Component\Console\Attribute\AsCommand;
-use Symfony\Component\Process\ExecutableFinder;
 use Symfony\Component\Process\Process;
 
 #[AsCommand(name: 'horizon:listen')]
@@ -85,21 +86,21 @@ class ListenCommand extends Command
             );
         }
 
-        $nodeExecutable = (new ExecutableFinder)->find('node');
+        $watcherClass = config('horizon.file_watcher', ChokidarFileWatcher::class);
+        $watcher = app($watcherClass, ['poll' => $this->option('poll')]);
 
-        if (! $nodeExecutable) {
+        if (! $watcher instanceof FileWatcher) {
             throw new InvalidArgumentException(
-                'Node could not be found. Please ensure Node is installed and available in your system PATH.',
+                'The configured file watcher [' . $watcherClass . '] must implement ' . FileWatcher::class . '.',
             );
         }
 
-        $process = new Process([
-            $nodeExecutable,
-            'file-watcher.cjs',
-            json_encode(collect($paths)->map(fn ($path) => base_path($path))->values()->all()),
-            $this->option('poll') ? '1' : '',
-        ], __DIR__.'/../../bin', ['NODE_PATH' => base_path('node_modules')], null, null);
+        $filePaths = collect($paths)
+                ->map(static fn($path) => base_path($path))
+                ->values()
+                ->all();
 
+        $process = $watcher->build($filePaths);
         $process->start();
 
         sleep(1);
@@ -186,7 +187,7 @@ class ListenCommand extends Command
     protected function watcherFailed()
     {
         $this->components->error(
-            'Unable to start file watcher. Please ensure Node.js and the chokidar npm package are installed.',
+            'Unable to start file watcher. Please ensure the configured file watcher and its dependencies are installed.',
         );
 
         $this->output->writeln($this->watcherProcess->getErrorOutput());
