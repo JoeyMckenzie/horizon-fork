@@ -5,7 +5,6 @@ namespace Laravel\Horizon\Console;
 use Illuminate\Console\Command;
 use InvalidArgumentException;
 use Laravel\Horizon\Contracts\FileWatcher;
-use Laravel\Horizon\FileWatchers\ChokidarFileWatcher;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Process\Process;
 
@@ -19,7 +18,7 @@ class ListenCommand extends Command
      */
     protected $signature = 'horizon:listen
         {--environment= : The environment name}
-        {--poll : Use polling for file watching}';
+        {--poll : Deprecated. Set "horizon.chokidar.poll" in your configuration instead}';
 
     /**
      * The console command description.
@@ -36,11 +35,11 @@ class ListenCommand extends Command
     protected $horizonProcess;
 
     /**
-     * The file watcher process instance.
+     * The file watcher instance.
      *
-     * @var \Symfony\Component\Process\Process|null
+     * @var \Laravel\Horizon\Contracts\FileWatcher|null
      */
-    protected $watcherProcess;
+    protected $watcher;
 
     /**
      * Indicates if a termination signal has been received.
@@ -58,11 +57,13 @@ class ListenCommand extends Command
     {
         $this->components->info('Starting Horizon and watching for file changes...');
 
-        $this->watcherProcess = $this->startWatcher();
+        if ($this->option('poll')) {
+            $this->components->warn('The --poll option is deprecated. Set "horizon.chokidar.poll" in your configuration instead.');
 
-        if ($this->watcherProcess->isTerminated()) {
-            return $this->watcherFailed();
+            config(['horizon.chokidar.poll' => true]);
         }
+
+        $this->watcher = $this->startWatcher();
 
         if (! $this->startHorizon()) {
             return Command::FAILURE;
@@ -74,9 +75,9 @@ class ListenCommand extends Command
     }
 
     /**
-     * Start the file watcher process.
+     * Resolve the file watcher and start watching the configured paths.
      *
-     * @return \Symfony\Component\Process\Process
+     * @return \Laravel\Horizon\Contracts\FileWatcher
      */
     protected function startWatcher()
     {
@@ -86,26 +87,13 @@ class ListenCommand extends Command
             );
         }
 
-        $watcherClass = config('horizon.file_watcher', ChokidarFileWatcher::class);
-        $watcher = app($watcherClass, ['poll' => $this->option('poll')]);
+        $watcher = app(FileWatcher::class);
 
-        if (! $watcher instanceof FileWatcher) {
-            throw new InvalidArgumentException(
-                'The configured file watcher [' . $watcherClass . '] must implement ' . FileWatcher::class . '.',
-            );
-        }
+        $watcher->start(
+            collect($paths)->map(fn ($path) => base_path($path))->values()->all(),
+        );
 
-        $filePaths = collect($paths)
-                ->map(static fn($path) => base_path($path))
-                ->values()
-                ->all();
-
-        $process = $watcher->build($filePaths);
-        $process->start();
-
-        sleep(1);
-
-        return $process;
+        return $watcher;
     }
 
     /**
@@ -130,8 +118,8 @@ class ListenCommand extends Command
             $this->horizonProcess->stop(signal: $signal);
             $this->horizonProcess->wait();
 
-            if ($this->watcherProcess) {
-                $this->watcherProcess->stop();
+            if ($this->watcher) {
+                $this->watcher->stop();
             }
         });
 
@@ -150,7 +138,7 @@ class ListenCommand extends Command
     protected function listenForChanges()
     {
         while (! $this->trappedSignal) {
-            if ($this->watcherProcess->getIncrementalOutput()) {
+            if ($this->watcher->changed()) {
                 $this->restartHorizon();
             }
 
@@ -177,21 +165,5 @@ class ListenCommand extends Command
         $this->horizonProcess->wait();
 
         $this->startHorizon();
-    }
-
-    /**
-     * Handle watcher process failure.
-     *
-     * @return int
-     */
-    protected function watcherFailed()
-    {
-        $this->components->error(
-            'Unable to start file watcher. Please ensure the configured file watcher and its dependencies are installed.',
-        );
-
-        $this->output->writeln($this->watcherProcess->getErrorOutput());
-
-        return Command::FAILURE;
     }
 }

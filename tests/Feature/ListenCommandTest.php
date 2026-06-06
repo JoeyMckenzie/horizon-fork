@@ -4,9 +4,9 @@ namespace Laravel\Horizon\Tests\Feature;
 
 use InvalidArgumentException;
 use Laravel\Horizon\Contracts\FileWatcher;
+use Laravel\Horizon\FileWatchers\ChokidarFileWatcher;
 use Laravel\Horizon\Tests\Feature\Fakes\FakeFileWatcher;
 use Laravel\Horizon\Tests\IntegrationTest;
-use stdClass;
 
 class ListenCommandTest extends IntegrationTest
 {
@@ -42,40 +42,36 @@ class ListenCommandTest extends IntegrationTest
         $this->artisan('horizon:listen');
     }
 
-    public function test_listen_command_resolves_the_configured_file_watcher()
+    public function test_file_watcher_contract_defaults_to_chokidar()
+    {
+        $this->assertInstanceOf(
+            ChokidarFileWatcher::class,
+            $this->app->make(FileWatcher::class),
+        );
+    }
+
+    public function test_file_watcher_contract_can_be_overridden_by_user_binding()
+    {
+        $this->app->bind(FileWatcher::class, FakeFileWatcher::class);
+
+        $this->assertInstanceOf(
+            FakeFileWatcher::class,
+            $this->app->make(FileWatcher::class),
+        );
+    }
+
+    public function test_listen_command_starts_the_bound_watcher_with_absolute_paths()
     {
         FakeFileWatcher::reset();
 
+        $this->app->bind(FileWatcher::class, FakeFileWatcher::class);
+
         config(['horizon.watch' => ['app']]);
-        config(['horizon.file_watcher' => FakeFileWatcher::class]);
 
         $this->artisan('horizon:listen');
 
-        $this->assertTrue(FakeFileWatcher::$built);
-        $this->assertNotEmpty(FakeFileWatcher::$lastPaths);
+        $this->assertTrue(FakeFileWatcher::$started);
+        $this->assertCount(1, FakeFileWatcher::$lastPaths);
         $this->assertStringEndsWith('/app', FakeFileWatcher::$lastPaths[0]);
-    }
-
-    public function test_listen_command_forwards_poll_option_to_watcher_constructor()
-    {
-        FakeFileWatcher::reset();
-
-        config(['horizon.watch' => ['app']]);
-        config(['horizon.file_watcher' => FakeFileWatcher::class]);
-
-        $this->artisan('horizon:listen', ['--poll' => true]);
-
-        $this->assertTrue(FakeFileWatcher::$lastPoll);
-    }
-
-    public function test_listen_command_throws_when_file_watcher_does_not_implement_contract()
-    {
-        config(['horizon.watch' => ['app']]);
-        config(['horizon.file_watcher' => stdClass::class]);
-
-        $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('must implement '.FileWatcher::class);
-
-        $this->artisan('horizon:listen');
     }
 }

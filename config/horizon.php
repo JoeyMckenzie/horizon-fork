@@ -69,7 +69,7 @@ return [
 
     'prefix' => env(
         'HORIZON_PREFIX',
-        Str::slug(env('APP_NAME', 'laravel'), '_') . '_horizon:'
+        Str::slug(env('APP_NAME', 'laravel'), '_').'_horizon:'
     ),
 
     /*
@@ -237,13 +237,19 @@ return [
     | the `horizon:listen` command. Whenever any directories or files are
     | changed, Horizon will automatically restart to apply all changes.
     |
-    | The `file_watcher` option may be set to any class implementing the
-    | Horizon provided `FileWatcher` contract, allowing configuration
-    | of a preferred watcher (chokidar, watchexec, entr, watchman).
+    | Polling may be enabled for the default chokidar watcher when native
+    | filesystem events are unreliable (e.g. Docker bind mounts or NFS).
+    |
+    | The watcher implementation may be swapped by binding the
+    | `Laravel\Horizon\Contracts\FileWatcher` contract in your application's
+    | service provider — for example, to the bundled `PollingFileWatcher`
+    | for a no-Node alternative.
     |
     */
 
-    'file_watcher' => Laravel\Horizon\FileWatchers\ChokidarFileWatcher::class,
+    'chokidar' => [
+        'poll' => env('HORIZON_CHOKIDAR_POLL', false),
+    ],
 
     'watch' => [
         'app',

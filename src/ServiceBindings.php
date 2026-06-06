@@ -30,5 +30,8 @@ trait ServiceBindings
 
         // Notifications...
         Contracts\LongWaitDetectedNotification::class => Notifications\LongWaitDetected::class,
+
+        // File watcher...
+        Contracts\FileWatcher::class => FileWatchers\ChokidarFileWatcher::class,
     ];
 }

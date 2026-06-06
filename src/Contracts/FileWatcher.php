@@ -2,15 +2,35 @@
 
 namespace Laravel\Horizon\Contracts;
 
+/**
+ * Contract for watching files for changes during `horizon:listen`.
+ *
+ * Implementations have a lifecycle of: a single call to start() with the
+ * paths to watch, followed by repeated calls to changed() on each tick of
+ * the listen loop, followed by a single call to stop() when the command
+ * is terminating.
+ */
 interface FileWatcher
 {
     /**
-     * Build the process that watches the given paths for changes.
-     * Any output written to the process's standard output will be treated
-     * as a change notification and will trigger a Horizon restart.
+     * Begin watching the given paths for changes.
      *
      * @param  array  $paths
-     * @return \Symfony\Component\Process\Process
+     * @return void
      */
-    public function build(array $paths);
+    public function start(array $paths);
+
+    /**
+     * Determine if any watched files have changed since the last check.
+     *
+     * @return bool
+     */
+    public function changed();
+
+    /**
+     * Stop watching for changes and release any resources.
+     *
+     * @return void
+     */
+    public function stop();
 }
